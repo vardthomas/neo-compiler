@@ -5,7 +5,7 @@
     <AssemblyTitle>Neo.Compiler.MSIL</AssemblyTitle>
     <Version>2.0.1</Version>
     <Authors>The Neo Project</Authors>
-    <TargetFramework>netcoreapp1.0</TargetFramework>
+    <TargetFramework>netcoreapp2.0</TargetFramework>
     <PlatformTarget>anycpu</PlatformTarget>
     <AssemblyName>neon</AssemblyName>
     <OutputType>Exe</OutputType>
@@ -24,9 +24,12 @@
     <DebugSymbols>False</DebugSymbols>
   </PropertyGroup>
 
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug_MainNet|AnyCPU'" />
+
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug_TestNet|AnyCPU'" />
+
   <ItemGroup>
-    <PackageReference Include="AntShares.MonoCecil" Version="1.0.0" />
-    <PackageReference Include="Neo.VM" Version="2.0.0" />
+    <ProjectReference Include="..\..\neo-vm\src\neo-vm\neo-vm.csproj" />
   </ItemGroup>
 
 </Project>
