@@ -16,7 +16,7 @@ namespace Neo.Compiler.JVM
         public JavaClass LoadClassByBytes(byte[] data, string srccode = null)
         {
             var js = new javaloader.ClassFile(data, 0, data.Length);
-            var _class = new JavaClass(js, null);
+            var _class = new JavaClass(this, js, null);
             this.classes[_class.classfile.Name] = _class;
             return _class;
         }
@@ -52,7 +52,7 @@ namespace Neo.Compiler.JVM
                             data = ms.ToArray();
                         }
                         var cc = LoadClassByBytes(data, codepath);
-                        var bskip = cc.classfile.Name.IndexOf("org.neo.") == 0;
+                        var bskip = cc.classfile.Name.IndexOf("org.neo.") == 0 || cc.classfile.Name.IndexOf("src.org.neo.") == 0;
                         cc.skip = bskip;
                     }
 
@@ -68,9 +68,53 @@ namespace Neo.Compiler.JVM
     }
     public class JavaClass
     {
-        public JavaClass(javaloader.ClassFile classfile, string[] srcfile = null)
+        public Dictionary<string, byte[]> ConstValues = new Dictionary<string, byte[]>();
+        public bool IsEnum = false;
+        void _InitConsts(Instruction[] Instructions)
         {
+            int lastv = -1;
+            foreach (var c in Instructions)
+            {
+                if (c.NormalizedOpCode == javaloader.NormalizedByteCode.__iconst)
+                {
+                    lastv = c.Arg1;
+                }
+                else if (c.NormalizedOpCode == javaloader.NormalizedByteCode.__invokespecial)
+                {
+                    continue;
+                }
+                else if (c.NormalizedOpCode == javaloader.NormalizedByteCode.__putstatic)
+                {
+                    var p1 = c.Arg1;
+                    if (this.classfile.constantpool[p1] is javaloader.ClassFile.ConstantPoolItemFieldref &&
+                       lastv >= 0)
+                    {
+                        var fref = (javaloader.ClassFile.ConstantPoolItemFieldref)this.classfile.constantpool[p1];
+                        this.ConstValues[fref.Name] = new System.Numerics.BigInteger(lastv).ToByteArray();
+                    }
+                }
+                else
+                {
+                    lastv = -1;
+                }
+            }
+        }
+        public JavaModule module;
+        public JavaClass(JavaModule module, javaloader.ClassFile classfile, string[] srcfile = null)
+        {
+            this.module = module;
             this.classfile = classfile;
+            if (this.classfile.IsEnum)
+            {
+                this.IsEnum = true;
+                foreach (var m in this.classfile.Methods)
+                {
+                    if (m.Name == javaloader.StringConstants.CLINIT)
+                    {
+                        _InitConsts(m.Instructions);
+                    }
+                }
+            }
             this.srcfile = srcfile;
             if (this.srcfile == null)
                 this.srcfile = new string[0];
@@ -84,7 +128,7 @@ namespace Neo.Compiler.JVM
                 var sign = "L" + this.classfile.Name + ";";
                 foreach (var f in this.classfile.Fields)
                 {
-                    if (f.Name == "INSTANCE"&&f.IsStatic&&f.Signature==sign)
+                    if (f.Name == "INSTANCE" && f.IsStatic && f.Signature == sign)
                     {
                         isKtObj = true;
                         break;
@@ -95,7 +139,7 @@ namespace Neo.Compiler.JVM
             {
 
                 bool bskip = false;
-                if (m.IsStatic == false&& isKtObj==false)
+                if (m.IsStatic == false && isKtObj == false)
                 {
                     bskip = true;
                     //静态成员不要，除非是kotlin 的 object 对象，相当于静态
@@ -119,11 +163,11 @@ namespace Neo.Compiler.JVM
                     bskip = true;
                 var nm = new JavaMethod(this, m);
                 nm.skip = bskip;
-                if (bskip == false && methods.ContainsKey(m.Name))
-                {
-                    throw new Exception("already have a func named:" + classfile.Name + "." + m.Name);
-                }
-                this.methods[m.Name] = nm;
+                //if (bskip == false && methods.ContainsKey(m.Name))
+                //{
+                //    throw new Exception("already have a func named:" + classfile.Name + "." + m.Name);
+                //}
+                this.methods[m.Name + m.Signature] = nm;
             }
             this.superClass = this.classfile.SuperClass;
         }

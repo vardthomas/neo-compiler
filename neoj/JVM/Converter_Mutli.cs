@@ -192,9 +192,9 @@ namespace Neo.Compiler.JVM
             if (this.srcModule.classes.ContainsKey(c.Class))
             {
                 javaclass = this.srcModule.classes[c.Class];
-                if (javaclass.methods.ContainsKey(c.Name))
+                if (javaclass.methods.ContainsKey(c.Name + c.Signature))
                 {
-                    _javamethod = javaclass.methods[c.Name];
+                    _javamethod = javaclass.methods[c.Name + c.Signature];
                 }
                 else
                 {
@@ -203,9 +203,9 @@ namespace Neo.Compiler.JVM
                         if (this.srcModule.classes.ContainsKey(javaclass.superClass))
                         {
                             javaclass = this.srcModule.classes[javaclass.superClass];
-                            if (javaclass.methods.ContainsKey(c.Name))
+                            if (javaclass.methods.ContainsKey(c.Name + c.Signature))
                             {
-                                _javamethod = javaclass.methods[c.Name];
+                                _javamethod = javaclass.methods[c.Name + c.Signature];
                                 break;
                             }
                         }
@@ -243,7 +243,7 @@ namespace Neo.Compiler.JVM
             {
                 calltype = 4;
             }
-            else if (this.outModule.mapMethods.ContainsKey(name))
+            else if (this.outModule.mapMethods.ContainsKey(c.Class + "::" + c.Name + c.Signature))
             {//this is a call
                 calltype = 1;
             }
@@ -421,7 +421,7 @@ namespace Neo.Compiler.JVM
             {
                 var _c = _Convert1by1(VM.OpCode.CALL, null, to, new byte[] { 5, 0 });
                 _c.needfixfunc = true;
-                _c.srcfunc = name;
+                _c.srcfunc = name + c.Signature;
                 return 0;
             }
             else if (calltype == 2)

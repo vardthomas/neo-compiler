@@ -89,6 +89,9 @@ namespace Neo.Compiler.JVM
             foreach (var key in outModule.mapMethods.Keys)
             {
                 var name = key.Substring(key.IndexOf("::") + 2);
+                var i = name.IndexOf('(');
+                name = name.Substring(0, i);
+
                 if (name == ("Main"))
                 {
                     var m = outModule.mapMethods[key];
@@ -314,11 +317,24 @@ namespace Neo.Compiler.JVM
                             }
 
                         }
-                        if (c.Class == "java.lang.System")
+                        else if (c.Class == "java.lang.System")
                         {
                             if (c.Name == "out")
                             {
                                 //donothing
+                            }
+                        }
+                        else
+                        {
+                            var m = method.DeclaringType.module;
+                            if(m.classes.ContainsKey(c.Class))
+                            {
+                                var _tclass = m.classes[c.Class];
+                                if(_tclass.IsEnum)
+                                {
+                                    var v = _tclass.ConstValues[c.Name];
+                                    _ConvertPush(v, src, to);
+                                }
                             }
                         }
                         //this.convertType.Push(c.Signature);
