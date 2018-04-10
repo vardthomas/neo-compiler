@@ -316,6 +316,7 @@ namespace Neo.Compiler.JVM
                     name == "java.lang.String::valueOf" ||
                     name == "java.lang.Long::valueOf" ||
                     name == "java.lang.Integer::valueOf" ||
+                    name == "java.lang.Byte::valueOf" ||
                     name == "java.math.BigInteger::toByteArray")
                 {
                     //donothing
