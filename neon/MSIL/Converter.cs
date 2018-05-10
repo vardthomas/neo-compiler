@@ -275,7 +275,7 @@ namespace Neo.Compiler.MSIL
                     var addrfunc = this.outModule.mapMethods[c.srcfunc].funcaddr;
                     int wantaddr = addrfunc - c.addr;
 
-                    if (wantaddr < Int16.MinValue|| wantaddr > Int16.MaxValue)
+                    if (wantaddr < Int16.MinValue || wantaddr > Int16.MaxValue)
                     {
                         throw new Exception("addr jump is too far.");
                     }
@@ -871,6 +871,12 @@ namespace Neo.Compiler.MSIL
                             {
                                 var intsrc = (int)_src;
                                 _ConvertPush(intsrc, src, to);
+                            }
+                            else if (_src is long)
+                            {
+                                var intsrc = (long)_src;
+                                _ConvertPush(intsrc, src, to);
+
                             }
                             else if (_src is Boolean)
                             {

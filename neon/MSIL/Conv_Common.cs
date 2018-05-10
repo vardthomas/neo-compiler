@@ -128,20 +128,20 @@ namespace Neo.Compiler.MSIL
             if (i > 0 && i <= 16) return _Convert1by1((VM.OpCode)(byte)i + 0x50, src, to);
             return _ConvertPush(((BigInteger)i).ToByteArray(), src, to);
         }
-        private int _ConvertPushI8WithConv(ILMethod from,long i ,OpCode src,NeoMethod to)
+        private int _ConvertPushI8WithConv(ILMethod from, long i, OpCode src, NeoMethod to)
         {
             var next = from.GetNextCodeAddr(src.addr);
             var code = from.body_Codes[next].code;
             BigInteger outv;
-            if (code== CodeEx.Conv_U || code == CodeEx.Conv_U8)
-                //code == CodeEx.Conv_U1 || code ==CodeEx.Conv_U2 || code==CodeEx.Conv_U4|| code== CodeEx.Conv_U8)
+            if (code == CodeEx.Conv_U || code == CodeEx.Conv_U8)
+            //code == CodeEx.Conv_U1 || code ==CodeEx.Conv_U2 || code==CodeEx.Conv_U4|| code== CodeEx.Conv_U8)
             {
                 ulong v = (ulong)i;
                 outv = v;
                 _ConvertPush(outv.ToByteArray(), src, to);
                 return 1;
             }
-            else if(code == CodeEx.Conv_U1)
+            else if (code == CodeEx.Conv_U1)
             {
                 byte v = (byte)i;
                 outv = v;
@@ -165,7 +165,19 @@ namespace Neo.Compiler.MSIL
                 return 1;
 
             }
-            else
+            else if (code == CodeEx.Call)
+            {
+                var call = from.body_Codes[next];
+                if (call.tokenMethod == "System.Numerics.BigInteger System.Numerics.BigInteger::op_Implicit(System.UInt64)")
+                {//如果是ulong转型到biginteger，需要注意
+                    ulong v = (ulong)i;
+                    outv = v;
+                    _ConvertPush(outv.ToByteArray(), src, to);
+                    return 1;
+                }
+            }
+           
+
             {
                 _ConvertPush(i, src, to);
                 return 0;
