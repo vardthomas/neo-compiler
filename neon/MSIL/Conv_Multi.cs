@@ -671,7 +671,19 @@ namespace Neo.Compiler.MSIL
             }
 
             if (calltype == 0)
-                throw new Exception("unknown call: " + src.tokenMethod + "\r\n   in: " + to.name + "\r\n");
+            {
+                //之前的所有尝试都无效，那也不一定是个不存在的函数，有可能在别的模块里
+                if (TryInsertMethod(outModule, defs))
+                {
+                    calltype = 1;
+                    //ILModule module = new ILModule();
+                    //module.LoadModule
+                    //ILType type =new ILType()
+                    //ILMethod method = new ILMethod(defs)
+                }
+                else
+                    throw new Exception("unknown call: " + src.tokenMethod + "\r\n   in: " + to.name + "\r\n");
+            }
             var md = src.tokenUnknown as Mono.Cecil.MethodReference;
             var pcount = md.Parameters.Count;
             bool havethis = md.HasThis;
@@ -782,7 +794,62 @@ namespace Neo.Compiler.MSIL
             }
             return 0;
         }
+        private bool TryInsertMethod(NeoModule outModule, Mono.Cecil.MethodDefinition method)
+        {
+            var oldaddr = this.addr;
+            var typename = method.DeclaringType.FullName;
+            ILType type;
+            if (inModule.mapType.TryGetValue(typename, out type) == false)
+            {
+                type = new ILType(null, method.DeclaringType);
+                inModule.mapType[typename] = type;
+            }
 
+            var _method = type.methods[method.FullName];
+            try
+            {
+                NeoMethod nm = new NeoMethod();
+                if (method.FullName.Contains(".cctor"))
+                {
+                    CctorSubVM.Parse(_method, this.outModule);
+                    //continue;
+                    return false;
+                }
+                if (method.IsConstructor)
+                {
+                    return false;
+                    //continue;
+                }
+                nm._namespace = method.DeclaringType.FullName;
+                nm.name = method.FullName;
+                nm.displayName = method.Name;
+                Mono.Collections.Generic.Collection<Mono.Cecil.CustomAttribute> ca = method.CustomAttributes;
+                foreach (var attr in ca)
+                {
+                    if (attr.AttributeType.Name == "DisplayNameAttribute")
+                    {
+                        nm.displayName = (string)attr.ConstructorArguments[0].Value;
+                    }
+                }
+                nm.inSmartContract = method.DeclaringType.BaseType.Name == "SmartContract";
+                nm.isPublic = method.IsPublic;
+                this.methodLink[_method] = nm;
+                outModule.mapMethods[nm.name] = nm;
+
+                ConvertMethod(_method, nm);
+                return true;
+            }
+            catch
+            {
+                return false;
+
+            }
+            finally
+            {
+                this.addr = oldaddr;
+
+            }
+        }
         private int _ConvertNewArr(ILMethod method, OpCode src, NeoMethod to)
         {
             var type = src.tokenType;

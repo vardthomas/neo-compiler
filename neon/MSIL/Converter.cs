@@ -63,9 +63,11 @@ namespace Neo.Compiler.MSIL
 
         ILogger logger;
         public NeoModule outModule;
+        ILModule inModule;
         public Dictionary<ILMethod, NeoMethod> methodLink = new Dictionary<ILMethod, NeoMethod>();
         public NeoModule Convert(ILModule _in)
         {
+            this.inModule = _in;
             //logger.Log("beginConvert.");
             this.outModule = new NeoModule(this.logger);
             foreach (var t in _in.mapType)
@@ -120,16 +122,17 @@ namespace Neo.Compiler.MSIL
                 }
             }
 
-
-            foreach (var t in _in.mapType)
+            var keys = new List<string>(_in.mapType.Keys);
+            foreach (var key in keys)
             {
-                if (t.Key.Contains("<"))
+                var value = _in.mapType[key];
+                if (key.Contains("<"))
                     continue;//系统的，不要
-                if (t.Key.Contains("_API_")) continue;//api的，不要
-                if (t.Key.Contains(".My."))
+                if (key.Contains("_API_")) continue;//api的，不要
+                if (key.Contains(".My."))
                     continue;//vb system
 
-                foreach (var m in t.Value.methods)
+                foreach (var m in value.methods)
                 {
 
                     if (m.Value.method == null) continue;
