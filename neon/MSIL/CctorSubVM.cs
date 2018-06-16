@@ -202,6 +202,14 @@ namespace Neo.Compiler.MSIL
                             to.staticfields[fname] = calcStack.Pop();
                         }
                         break;
+                    case CodeEx.Stelem_I1:
+                        {
+                            var v =(byte)(int)calcStack.Pop();
+                            var index =(int)calcStack.Pop();
+                            var array = calcStack.Pop() as byte[];
+                            array[index] = v;
+                        }
+                        break;
                 }
             }
 
