@@ -30,6 +30,7 @@ namespace Neo.Compiler
             //并计算 this.codehash            byte[]
         }
         public string mainMethod;
+        public ConvOption option;
         public Dictionary<string, NeoMethod> mapMethods = new Dictionary<string, NeoMethod>();
         public Dictionary<string, NeoEvent> mapEvents = new Dictionary<string, NeoEvent>();
         //public Dictionary<string, byte[]> codes = new Dictionary<string, byte[]>();
@@ -92,6 +93,7 @@ namespace Neo.Compiler
         public List<NeoParam> paramtypes = new List<NeoParam>();
         public string returntype;
         public bool isPublic = true;
+        public bool inSmartContract;
         //临时变量
         public List<NeoParam> body_Variables = new List<NeoParam>();
 

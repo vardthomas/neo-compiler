@@ -44,11 +44,13 @@ namespace Neo.Compiler.JVM
         JavaModule srcModule;
         public NeoModule outModule;
         public Dictionary<JavaMethod, NeoMethod> methodLink = new Dictionary<JavaMethod, NeoMethod>();
-        public NeoModule Convert(JavaModule _in)
+        public NeoModule Convert(JavaModule _in, ConvOption option = null)
         {
             this.srcModule = _in;
             //logger.Log("beginConvert.");
             this.outModule = new NeoModule(this.logger);
+            this.outModule.option = option == null ? ConvOption.Default : option;
+
             foreach (var c in _in.classes.Values)
             {
                 if (c.skip) continue;
@@ -173,7 +175,13 @@ namespace Neo.Compiler.JVM
                 if (c.needfixfunc)
                 {//需要地址转换
                     var addrfunc = this.outModule.mapMethods[c.srcfunc].funcaddr;
-                    Int16 addrconv = (Int16)(addrfunc - c.addr);
+                    int wantaddr = addrfunc - c.addr;
+
+                    if (wantaddr < Int16.MinValue || wantaddr > Int16.MaxValue)
+                    {
+                        throw new Exception("addr jump is too far.");
+                    }
+                    Int16 addrconv = (Int16)wantaddr;
                     c.bytes = BitConverter.GetBytes(addrconv);
                     c.needfixfunc = false;
                 }
@@ -327,10 +335,10 @@ namespace Neo.Compiler.JVM
                         else
                         {
                             var m = method.DeclaringType.module;
-                            if(m.classes.ContainsKey(c.Class))
+                            if (m.classes.ContainsKey(c.Class))
                             {
                                 var _tclass = m.classes[c.Class];
-                                if(_tclass.IsEnum)
+                                if (_tclass.IsEnum)
                                 {
                                     var v = _tclass.ConstValues[c.Name];
                                     _ConvertPush(v, src, to);

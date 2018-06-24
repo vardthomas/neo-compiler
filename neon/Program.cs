@@ -82,8 +82,9 @@ namespace Neo.Compiler
             try
             {
                 var conv = new ModuleConverter(log);
-
-                NeoModule am = conv.Convert(mod);
+                ConvOption option = new ConvOption();
+                option.useNep8 = true;
+                NeoModule am = conv.Convert(mod,option);
                 bytes = am.Build();
                 log.Log("convert succ");
 

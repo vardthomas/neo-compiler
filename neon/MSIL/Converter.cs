@@ -65,11 +65,12 @@ namespace Neo.Compiler.MSIL
         public NeoModule outModule;
         ILModule inModule;
         public Dictionary<ILMethod, NeoMethod> methodLink = new Dictionary<ILMethod, NeoMethod>();
-        public NeoModule Convert(ILModule _in)
+        public NeoModule Convert(ILModule _in, ConvOption option = null)
         {
             this.inModule = _in;
             //logger.Log("beginConvert.");
             this.outModule = new NeoModule(this.logger);
+            this.outModule.option = option == null ? ConvOption.Default : option;
             foreach (var t in _in.mapType)
             {
                 if (t.Key.Contains("<"))
@@ -276,14 +277,37 @@ namespace Neo.Compiler.MSIL
                 if (c.needfixfunc)
                 {//需要地址转换
                     var addrfunc = this.outModule.mapMethods[c.srcfunc].funcaddr;
-                    int wantaddr = addrfunc - c.addr;
 
-                    if (wantaddr < Int16.MinValue || wantaddr > Int16.MaxValue)
+                    if (c.bytes.Length > 2)
                     {
-                        throw new Exception("addr jump is too far.");
+                        var len = c.bytes.Length - 2;
+                        int wantaddr = addrfunc - c.addr - len;
+
+                        if (wantaddr < Int16.MinValue || wantaddr > Int16.MaxValue)
+                        {
+                            throw new Exception("addr jump is too far.");
+                        }
+                        Int16 addrconv = (Int16)wantaddr;
+
+                        var bts = BitConverter.GetBytes(addrconv);
+                        c.bytes[c.bytes.Length - 2] = bts[0];
+                        c.bytes[c.bytes.Length - 1] = bts[1];
                     }
-                    Int16 addrconv = (Int16)wantaddr;
-                    c.bytes = BitConverter.GetBytes(addrconv);
+                    else if (c.bytes.Length == 2)
+                    {
+                        int wantaddr = addrfunc - c.addr;
+
+                        if (wantaddr < Int16.MinValue || wantaddr > Int16.MaxValue)
+                        {
+                            throw new Exception("addr jump is too far.");
+                        }
+                        Int16 addrconv = (Int16)wantaddr;
+                        c.bytes = BitConverter.GetBytes(addrconv);
+                    }
+                    else
+                    {
+                        throw new Exception("not have right fill bytes");
+                    }
                     c.needfixfunc = false;
                 }
             }

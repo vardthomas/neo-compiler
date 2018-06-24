@@ -736,9 +736,22 @@ namespace Neo.Compiler.MSIL
             }
             if (calltype == 1)
             {
-                var c = _Convert1by1(VM.OpCode.CALL, null, to, new byte[] { 5, 0 });
-                c.needfixfunc = true;
-                c.srcfunc = src.tokenMethod;
+                if (this.outModule.option.useNep8)
+                {
+                    byte _pcount = (byte)defs.Parameters.Count;
+                    byte _rvcount = (byte)(defs.ReturnType.FullName == "System.Void" ? 0 : 1);
+
+                    var c = _Convert1by1(VM.OpCode.CALL_I, null, to, new byte[] { _rvcount, _pcount, 0, 0 });
+                    c.needfixfunc = true;
+                    c.srcfunc = src.tokenMethod;
+
+                }
+                else
+                {
+                    var c = _Convert1by1(VM.OpCode.CALL, null, to, new byte[] { 5, 0 });
+                    c.needfixfunc = true;
+                    c.srcfunc = src.tokenMethod;
+                }
                 return 0;
             }
             else if (calltype == 2)
@@ -759,7 +772,28 @@ namespace Neo.Compiler.MSIL
             }
             else if (calltype == 4)
             {
-                _Convert1by1(VM.OpCode.APPCALL, null, to, callhash);
+                if (this.outModule.option.useNep8)
+                {
+                    byte _pcount = (byte)defs.Parameters.Count;
+                    byte _rvcount = (byte)(defs.ReturnType.FullName == "System.Void" ? 0 : 1);
+
+
+                    if (callhash.All(v => v == 0))//empty nep4
+                    {
+                        throw new Exception("nep4 calltype==6");
+                    }
+                    else
+                    {
+                        var bytes = new byte[] { _rvcount, _pcount }.Concat(callhash).ToArray();
+                        _Convert1by1(VM.OpCode.CALL_E, null, to, bytes);
+
+                    }
+
+                }
+                else
+                {
+                    _Convert1by1(VM.OpCode.APPCALL, null, to, callhash);
+                }
 
             }
             else if (calltype == 5)
@@ -787,9 +821,24 @@ namespace Neo.Compiler.MSIL
             {
                 _ConvertPush(callpcount, src, to);
                 _Convert1by1(VM.OpCode.ROLL, null, to);
-                byte[] nullhash = new byte[20];
+
                 //dyn appcall
-                _Convert1by1(VM.OpCode.APPCALL, null, to, nullhash);
+                if (this.outModule.option.useNep8)
+                {
+                    byte _pcount = (byte)defs.Parameters.Count;
+                    byte _rvcount = (byte)(defs.ReturnType.FullName == "System.Void" ? 0 : 1);
+                    //byte signature = (byte)(
+                    //    (retcount << 7)
+                    //    |
+                    //    defs.Parameters.Count
+                    //    );
+                    _Convert1by1(VM.OpCode.CALL_ED, null, to, new byte[] { _rvcount, _pcount });
+                }
+                else
+                {
+                    byte[] nullhash = new byte[20];
+                    _Convert1by1(VM.OpCode.APPCALL, null, to, nullhash);
+                }
 
             }
             return 0;
