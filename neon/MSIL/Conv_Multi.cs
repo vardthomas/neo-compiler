@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 
@@ -846,6 +847,11 @@ namespace Neo.Compiler.MSIL
         private bool TryInsertMethod(NeoModule outModule, Mono.Cecil.MethodDefinition method)
         {
             var oldaddr = this.addr;
+            var oldaddrconv = new Dictionary<int, int>();
+            foreach (int k in addrconv.Keys)
+            {
+                oldaddrconv[k] = addrconv[k];
+            }
             var typename = method.DeclaringType.FullName;
             ILType type;
             if (inModule.mapType.TryGetValue(typename, out type) == false)
@@ -896,7 +902,11 @@ namespace Neo.Compiler.MSIL
             finally
             {
                 this.addr = oldaddr;
-
+                this.addrconv.Clear();
+                foreach (int k in oldaddrconv.Keys)
+                {
+                    addrconv[k]=oldaddrconv[k];
+                }
             }
         }
         private int _ConvertNewArr(ILMethod method, OpCode src, NeoMethod to)
