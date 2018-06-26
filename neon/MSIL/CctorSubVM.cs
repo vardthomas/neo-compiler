@@ -105,6 +105,10 @@ namespace Neo.Compiler.MSIL
                                 byte[] data = new byte[count];
                                 calcStack.Push(data);
                             }
+                            else
+                            {
+                                throw new Exception("only byte[] can be defined in here.");
+                            }
                         }
                         break;
                     case CodeEx.Dup:
