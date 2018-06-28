@@ -22,15 +22,39 @@ namespace Neo.Compiler
             Console.OutputEncoding = System.Text.Encoding.UTF8;
             var log = new DefLogger();
             log.Log("Neo.Compiler.MSIL console app v" + Assembly.GetEntryAssembly().GetName().Version);
-            if (args.Length == 0)
+
+            bool bCompatible = false;
+            string filename = null;
+            for (var i = 0; i < args.Length; i++)
+            {
+                if (args[i][0] == '-')
+                {
+                    if (args[i] == "--compatible")
+                    {
+                        bCompatible = true;
+                    }
+
+                    //other option
+                }
+                else
+                {
+                    filename = args[i];
+                }
+            }
+
+            if (filename == null)
             {
                 log.Log("need one param for DLL filename.");
+                log.Log("[--compatible] disable nep8 function");
+                log.Log("Example:neon abc.dll --compatible");
                 return;
             }
-            string filename = args[0];
+            if (bCompatible)
+            {
+                log.Log("use --compatible no nep8");
+            }
             string onlyname = System.IO.Path.GetFileNameWithoutExtension(filename);
             string filepdb = onlyname + ".pdb";
-
             var path = Path.GetDirectoryName(filename);
             if (!string.IsNullOrEmpty(path))
             {
@@ -83,8 +107,8 @@ namespace Neo.Compiler
             {
                 var conv = new ModuleConverter(log);
                 ConvOption option = new ConvOption();
-                option.useNep8 = true;
-                NeoModule am = conv.Convert(mod,option);
+                option.useNep8 = !bCompatible;
+                NeoModule am = conv.Convert(mod, option);
                 bytes = am.Build();
                 log.Log("convert succ");
 
