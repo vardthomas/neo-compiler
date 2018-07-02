@@ -944,7 +944,10 @@ namespace Neo.Compiler.MSIL
                                 }
                             }
                         }
-
+                        else
+                        {//如果走到这里，是一个静态成员，但是没有添加readonly 表示
+                            throw new Exception("Just allow defined a static variable with readonly."+d.FullName);
+                        }
                     }
                     break;
                 case CodeEx.Throw:
