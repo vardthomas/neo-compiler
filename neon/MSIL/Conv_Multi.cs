@@ -505,8 +505,8 @@ namespace Neo.Compiler.MSIL
                     }
                     else
                     {
-                        _Convert1by1(VM.OpCode.INVERT, src, to);
-                        _Insert1(VM.OpCode.EQUAL, "", to);
+                        _Convert1by1(VM.OpCode.EQUAL, src, to);
+                        _Convert1by1(VM.OpCode.NOT, null, to);
                     }
                     ////各类!=指令
                     ////有可能有一些会特殊处理，故还保留独立判断
