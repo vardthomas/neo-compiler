@@ -915,6 +915,12 @@ namespace Neo.Compiler.MSIL
                                 var bytesrc = System.Text.Encoding.UTF8.GetBytes((string)_src);
                                 _ConvertPush(bytesrc, src, to);
                             }
+                            else if (_src is BigInteger)
+                            {
+                                byte[] bytes = ((BigInteger)_src).ToByteArray();
+                                _ConvertPush(bytes, src, to);
+
+                            }
                             else
                             {
                                 throw new Exception("not support type Ldsfld\r\n   in: " + to.name + "\r\n");
