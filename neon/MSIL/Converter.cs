@@ -155,7 +155,7 @@ namespace Neo.Compiler.MSIL
                             var type = m.Value.method.ReturnType.Resolve();
                             foreach (var i in type.Interfaces)
                             {
-                                if (i.Name == "IApiInterface")
+                                if (i.InterfaceType.Name == "IApiInterface")
                                 {
                                     nm.returntype = "IInteropInterface";
                                 }
