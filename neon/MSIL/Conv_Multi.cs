@@ -1181,7 +1181,9 @@ namespace Neo.Compiler.MSIL
                             {
                                 var value = (byte)values[j].Value;
                                 VM.OpCode v = (VM.OpCode)value;
-                                _Insert1(v, null, to);
+                                //_Insert1(v, src, to); this will miss the address for new xxx();
+                                _Convert1by1(v, src, to);
+
                             }
                             //var _type = attr.ConstructorArguments[0].Type;
 
