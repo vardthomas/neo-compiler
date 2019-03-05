@@ -31,9 +31,4 @@
   <ItemGroup>
     <ProjectReference Include="..\neon-lib\neon-lib.csproj" />
   </ItemGroup>
-  <ItemGroup>
-    <Compile Remove="MSIL\CctorSubVM.cs" />
-    <Compile Remove="MSIL\Conv_Common.cs" />
-    <Compile Remove="MSIL\ILModule.cs" />
-  </ItemGroup>
 </Project>
