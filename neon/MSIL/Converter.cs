@@ -782,15 +782,12 @@ namespace Neo.Compiler.MSIL
                 //用意为byte[] 取一部分.....
                 // en: intent to use byte[] as array.....
                 case CodeEx.Ldelem_U1:
-                    _ConvertPush(1, src, to);
-                    _Convert1by1(VM.OpCode.SUBSTR, null, to);
-                    break;
-                //用意为sbyte[] 取一部分.....
-                // en: intent to use sbyte[] as array.....
                 case CodeEx.Ldelem_I1:
-                    _ConvertPush(1, src, to);
-                    _Convert1by1(VM.OpCode.SUBSTR, null, to);
-                    break;
+                    //_ConvertPush(1, src, to);
+                    //_Convert1by1(VM.OpCode.SUBSTR, null, to);
+                    //break;
+                    //now we can use pickitem for byte[]
+
                 case CodeEx.Ldelem_Any:
                 case CodeEx.Ldelem_I:
                 //case CodeEx.Ldelem_I1:
