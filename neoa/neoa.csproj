@@ -3,7 +3,7 @@
   <PropertyGroup>
     <Copyright>2016-2017 The Neo Project</Copyright>
     <AssemblyTitle>Neo.Compiler.ASM</AssemblyTitle>
-    <Version>2.0.1</Version>
+    <Version>2.0.3</Version>
     <Authors>The Neo Project</Authors>
     <TargetFramework>netcoreapp1.0</TargetFramework>
     <AssemblyName>neoa</AssemblyName>
@@ -23,7 +23,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Neo.VM" Version="2.0.0" />
+    <PackageReference Include="Neo.VM" Version="2.0.3" />
   </ItemGroup>
 
 </Project>

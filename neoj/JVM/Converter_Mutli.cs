@@ -7,7 +7,7 @@ namespace Neo.Compiler.JVM
 {
     public partial class ModuleConverter
     {
-        private void _ConvertStLoc(OpCode src, AntsMethod to, int pos)
+        private void _ConvertStLoc(JavaMethod method, OpCode src, NeoMethod to, int pos)
         {
             //push d
             var c = _Convert1by1(VM.OpCode.DUPFROMALTSTACK, src, to);
@@ -22,8 +22,12 @@ namespace Neo.Compiler.JVM
             _Insert1(VM.OpCode.ROLL, "", to);
             _Insert1(VM.OpCode.SETITEM, "", to);
         }
-        private void _ConvertLdLoc(OpCode src, AntsMethod to, int pos)
+        private void _ConvertLdLoc(JavaMethod method, OpCode src, NeoMethod to, int pos)
         {
+            if (method.method.IsStatic == false && pos == 0)
+            {//忽略非静态函数取this的操作
+                return;
+            }
             //push d
             var c = _Convert1by1(VM.OpCode.DUPFROMALTSTACK, src, to);
             if (c.debugcode == null)
@@ -37,11 +41,11 @@ namespace Neo.Compiler.JVM
             //pick
             _Convert1by1(VM.OpCode.PICKITEM, null, to);
         }
-        private void _ConvertLdLocA(OpCode src, AntsMethod to, int pos)
-        {
-            _ConvertPush(pos, src, to);
-        }
-        private void _ConvertLdArg(OpCode src, AntsMethod to, int pos)
+        //private void _ConvertLdLocA(OpCode src, AntsMethod to, int pos)
+        //{
+        //    _ConvertPush(pos, src, to);
+        //}
+        private void _ConvertLdArg(OpCode src, NeoMethod to, int pos)
         {
             //push d
             var c = _Convert1by1(VM.OpCode.DEPTH, src, to);
@@ -66,7 +70,21 @@ namespace Neo.Compiler.JVM
             //pick
             _Convert1by1(VM.OpCode.PICK, null, to);
         }
+        public bool IsNonCall(JavaMethod method)
+        {
+            if (method != null)
+                if (method.method.Annotations != null)
+                {
 
+                    object[] op = method.method.Annotations[0] as object[];
+                    if (op[1] as string == "Lorg/neo/smartcontract/framework/Nonemit;")
+                    {
+                        return true;
+                    }
+                }
+
+            return false;
+        }
         public bool IsOpCall(JavaMethod method, OpCode src, out string callname)
         {
             if (method != null)
@@ -74,7 +92,7 @@ namespace Neo.Compiler.JVM
                 {
 
                     object[] op = method.method.Annotations[0] as object[];
-                    if (op[1] as string == "LAntShares/SmartContract/Framework/OpCode;")
+                    if (op[1] as string == "Lorg/neo/smartcontract/framework/OpCode;")
                     {
                         if (op[2] as string == "value")
                         {
@@ -100,7 +118,7 @@ namespace Neo.Compiler.JVM
                 {
 
                     object[] op = method.method.Annotations[0] as object[];
-                    if (op[1] as string == "LAntShares/SmartContract/Framework/Syscall;")
+                    if (op[1] as string == "Lorg/neo/smartcontract/framework/Syscall;")
                     {
                         if (op[2] as string == "value")
                         {
@@ -126,18 +144,23 @@ namespace Neo.Compiler.JVM
                 {
 
                     object[] op = method.method.Annotations[0] as object[];
-                    if (op[1] as string == "LAntShares/SmartContract/Framework/Appcall;")
+                    if (op[1] as string == "Lorg/neo/smartcontract/framework/Appcall;")
                     {
-                        if (op[2] as string == "HexStr")
+                        if (op[2] as string == "value")
                         {
                             var info = op[3] as string;
-                            byte[] bytes = new byte[info.Length / 2];
+                            if (info.Length < 40)
+                            {
+                                throw new Exception("appcall hash is too short.");
+                            }
+                            byte[] bytes = new byte[20];
 
-                            for (var i = 0; i < info.Length / 2; i++)
+                            for (var i = 0; i < 20; i++)
                             {
                                 bytes[i] = byte.Parse(info.Substring(i * 2, 2), System.Globalization.NumberStyles.AllowHexSpecifier);
                             }
-                            callhash = bytes;
+                            //string hexhash 需要反序
+                            callhash = bytes.Reverse().ToArray();
                             return true;
                         }
 
@@ -151,7 +174,7 @@ namespace Neo.Compiler.JVM
             callhash = null;
             return false;
         }
-        private int _ConvertCall(JavaMethod method, OpCode src, AntsMethod to)
+        private int _ConvertCall(JavaMethod method, OpCode src, NeoMethod to)
         {
             _Convert1by1(VM.OpCode.NOP, src, to);
             var cc = method.DeclaringType.classfile.constantpool;
@@ -169,9 +192,9 @@ namespace Neo.Compiler.JVM
             if (this.srcModule.classes.ContainsKey(c.Class))
             {
                 javaclass = this.srcModule.classes[c.Class];
-                if (javaclass.methods.ContainsKey(c.Name))
+                if (javaclass.methods.ContainsKey(c.Name + c.Signature))
                 {
-                    _javamethod = javaclass.methods[c.Name];
+                    _javamethod = javaclass.methods[c.Name + c.Signature];
                 }
                 else
                 {
@@ -180,9 +203,9 @@ namespace Neo.Compiler.JVM
                         if (this.srcModule.classes.ContainsKey(javaclass.superClass))
                         {
                             javaclass = this.srcModule.classes[javaclass.superClass];
-                            if (javaclass.methods.ContainsKey(c.Name))
+                            if (javaclass.methods.ContainsKey(c.Name + c.Signature))
                             {
-                                _javamethod = javaclass.methods[c.Name];
+                                _javamethod = javaclass.methods[c.Name + c.Signature];
                                 break;
                             }
                         }
@@ -197,8 +220,11 @@ namespace Neo.Compiler.JVM
             string callname = "";
             byte[] callhash = null;
             VM.OpCode callcode = VM.OpCode.NOP;
-
-            if (IsOpCall(_javamethod, src, out callname))
+            if (IsNonCall(_javamethod))
+            {
+                return 0;
+            }
+            else if (IsOpCall(_javamethod, src, out callname))
             {
                 if (System.Enum.TryParse<VM.OpCode>(callname, out callcode))
                 {
@@ -217,7 +243,7 @@ namespace Neo.Compiler.JVM
             {
                 calltype = 4;
             }
-            else if (this.outModule.mapMethods.ContainsKey(name))
+            else if (this.outModule.mapMethods.ContainsKey(c.Class + "::" + c.Name + c.Signature))
             {//this is a call
                 calltype = 1;
             }
@@ -230,9 +256,25 @@ namespace Neo.Compiler.JVM
                     _Convert1by1(VM.OpCode.DROP, src, to);
                     return 0;
                 }
+                else if (name == "java.math.BigInteger::<init>")
+                {//do nothing
+                    if (c.Signature == "([B)V")
+                    {
+                        return 0;
+                    }
+                    else if (c.Signature == "(Ljava/lang/String;)V")
+                    {
+                        throw new Exception("not support new BigInteger(string)");
+                    }
+                }
                 else if (name == "java.math.BigInteger::add")
                 {
                     _Convert1by1(VM.OpCode.ADD, src, to);
+                    return 0;
+                }
+                else if (name == "java.math.BigInteger::subtract")
+                {
+                    _Convert1by1(VM.OpCode.SUB, src, to);
                     return 0;
                 }
                 else if (name == "java.math.BigInteger::multiply")
@@ -258,8 +300,10 @@ namespace Neo.Compiler.JVM
                     //_Convert1by1(VM.OpCode.DEC, src, to);
                     return 0;
                 }
+                // todo: what about java.lang.String::contentEquals?
                 else if (name == "java.math.BigInteger::equals" ||
-                    name == "java.lang.String::equals")
+                    name == "java.lang.String::equals" ||
+                    name == "kotlin.jvm.internal.Intrinsics::areEqual")
                 {
                     _Convert1by1(VM.OpCode.NUMEQUAL, src, to);
                     //_Convert1by1(VM.OpCode.DEC, src, to);
@@ -268,13 +312,20 @@ namespace Neo.Compiler.JVM
                 else if (name == "java.math.BigInteger::valueOf" ||
                     name == "java.math.BigInteger::intValue" ||
                     name == "java.lang.Boolean::valueOf" ||
-                    name == "java.lang.Character::valueOf"||
-                    name == "java.lang.String::valueOf")
+                    name == "java.lang.Character::valueOf" ||
+                    name == "java.lang.String::valueOf" ||
+                    name == "java.lang.Long::valueOf" ||
+                    name == "java.lang.Integer::valueOf" ||
+                    name == "java.lang.Byte::valueOf" ||
+                    name == "java.math.BigInteger::toByteArray")
                 {
                     //donothing
                     return 0;
                 }
-                else if (name == "java.lang.Boolean::booleanValue")
+                else if (name == "java.lang.Boolean::booleanValue" ||
+                    name == "java.lang.Integer::integerValue" ||
+                    name == "java.lang.Long::longValue" ||
+                    name == "java.math.BigInteger::longValue")
                 {
                     _Convert1by1(VM.OpCode.NOP, src, to);
                     return 0;
@@ -290,14 +341,31 @@ namespace Neo.Compiler.JVM
                     _Convert1by1(VM.OpCode.SUBSTR, null, to);
                     return 0;
                 }
-                else if(name== "java.lang.String::length")
+                else if (name == "java.lang.String::length")
                 {
                     _Convert1by1(VM.OpCode.SIZE, null, to);
                     return 0;
                 }
-                else if(c.Class== "java.lang.StringBuilder")
+                else if (c.Class == "java.lang.StringBuilder")
                 {
                     return _ConvertStringBuilder(c.Name, null, to);
+                }
+                else if (name == "java.util.Arrays::equals" ||
+                    name == "kotlin.jvm.internal.Intrinsics::areEqual")
+                {
+                    _Convert1by1(VM.OpCode.EQUAL, null, to);
+                    return 0;
+                }
+                else if (name == "kotlin.jvm.internal.Intrinsics::checkParameterIsNotNull")
+                {
+                    _Convert1by1(VM.OpCode.DROP, null, to);
+                    _Convert1by1(VM.OpCode.DROP, null, to);
+                    return 0;
+                }
+                else if (name == "kotlin.jvm.internal.Intrinsics::throwNpe")
+                {
+                    _Convert1by1(VM.OpCode.THROW, src, to);
+                    return 0;
                 }
             }
 
@@ -307,46 +375,54 @@ namespace Neo.Compiler.JVM
             }
             var pcount = paramTypes.Count;
 
-            _Convert1by1(VM.OpCode.NOP, src, to);
-            if (pcount <= 1)
+            if (calltype == 2)
             {
-            }
-            else if (pcount == 2)
-            {
-                _Insert1(VM.OpCode.SWAP, "swap 2 param", to);
-            }
-            else if (pcount == 3)
-            {
-                _InsertPush(2, "swap 0 and 2 param", to);
-                _Insert1(VM.OpCode.XSWAP, "", to);
+                //opcode call 
             }
             else
-            {
-                for (var i = 0; i < pcount / 2; i++)
+            {//翻转参数入栈顺序
+                _Convert1by1(VM.OpCode.NOP, src, to);
+                if (pcount <= 1)
                 {
-                    int saveto = (pcount - 1 - i);
-                    _InsertPush(saveto, "load" + saveto, to);
-                    _Insert1(VM.OpCode.PICK, "", to);
 
-                    _InsertPush(i + 1, "load" + i + 1, to);
-                    _Insert1(VM.OpCode.PICK, "", to);
-
-
-                    _InsertPush(saveto + 2, "save to" + saveto + 2, to);
+                }
+                else if (pcount == 2)
+                {
+                    _Insert1(VM.OpCode.SWAP, "swap 2 param", to);
+                }
+                else if (pcount == 3)
+                {
+                    _InsertPush(2, "swap 0 and 2 param", to);
                     _Insert1(VM.OpCode.XSWAP, "", to);
-                    _Insert1(VM.OpCode.DROP, "", to);
+                }
+                else
+                {
+                    for (var i = 0; i < pcount / 2; i++)
+                    {
+                        int saveto = (pcount - 1 - i);
+                        _InsertPush(saveto, "load" + saveto, to);
+                        _Insert1(VM.OpCode.PICK, "", to);
 
-                    _InsertPush(i + 1, "save to" + i + 1, to);
-                    _Insert1(VM.OpCode.XSWAP, "", to);
-                    _Insert1(VM.OpCode.DROP, "", to);
+                        _InsertPush(i + 1, "load" + i + 1, to);
+                        _Insert1(VM.OpCode.PICK, "", to);
 
+
+                        _InsertPush(saveto + 2, "save to" + saveto + 2, to);
+                        _Insert1(VM.OpCode.XSWAP, "", to);
+                        _Insert1(VM.OpCode.DROP, "", to);
+
+                        _InsertPush(i + 1, "save to" + i + 1, to);
+                        _Insert1(VM.OpCode.XSWAP, "", to);
+                        _Insert1(VM.OpCode.DROP, "", to);
+
+                    }
                 }
             }
             if (calltype == 1)
             {
                 var _c = _Convert1by1(VM.OpCode.CALL, null, to, new byte[] { 5, 0 });
-                _c.needfix = true;
-                _c.srcfunc = name;
+                _c.needfixfunc = true;
+                _c.srcfunc = name + c.Signature;
                 return 0;
             }
             else if (calltype == 2)
@@ -370,10 +446,11 @@ namespace Neo.Compiler.JVM
                 _Convert1by1(VM.OpCode.APPCALL, null, to, callhash);
 
             }
+
             return 0;
         }
 
-        private int _ConvertNewArray(JavaMethod method, OpCode src, AntsMethod to)
+        private int _ConvertNewArray(JavaMethod method, OpCode src, NeoMethod to)
         {
             int skipcount = 0;
             if (src.arg1 != 8)
@@ -393,7 +470,7 @@ namespace Neo.Compiler.JVM
 
             //移除上一条指令
             to.body_Codes.Remove(code.addr);
-            this.addr--;
+            this.addr = code.addr;
 
             OpCode next = src;
             int dupcount = 0;
@@ -404,7 +481,39 @@ namespace Neo.Compiler.JVM
             {
                 int n = method.GetNextCodeAddr(next.addr);
                 next = method.body_Codes[n];
-                if (next.code == javaloader.NormalizedByteCode.__dup)
+                if (next.code == javaloader.NormalizedByteCode.__invokestatic)
+                {
+                    var i = method.DeclaringType.classfile.constantpool[next.arg1] as javaloader.ClassFile.ConstantPoolItemMethodref;
+                    var callname = i.Class + "::" + i.Name;
+                    if (callname == "java.lang.Integer::valueOf")
+                    {
+                        //nothing
+                        skipcount++;
+                    }
+                    else
+                    {
+                        throw new Exception("can not parse this new array code chain." + next.code);
+                    }
+                }
+                else if (next.code == javaloader.NormalizedByteCode.__invokevirtual)
+                {
+                    var i = method.DeclaringType.classfile.constantpool[next.arg1] as javaloader.ClassFile.ConstantPoolItemMethodref;
+                    var callname = i.Class + "::" + i.Name;
+                    if (callname == "java.lang.Byte::byteValue")
+                    {
+                        skipcount++;
+                    }
+                    else
+                    {
+                        throw new Exception("can not parse this new array code chain." + next.code);
+                    }
+                }
+                else if (next.code == javaloader.NormalizedByteCode.__checkcast)
+                {
+                    //nothing
+                    skipcount++;
+                }
+                else if (next.code == javaloader.NormalizedByteCode.__dup)
                 {
                     dupcount++;
                     skipcount++;
@@ -440,13 +549,25 @@ namespace Neo.Compiler.JVM
 
             return 0;
         }
-        private int _ConvertNew(JavaMethod method, OpCode src, AntsMethod to)
+        private int _ConvertNew(JavaMethod method, OpCode src, NeoMethod to)
         {
-            var c =            method.DeclaringType.classfile.constantpool[src.arg1] as javaloader.ClassFile.ConstantPoolItemClass;
-            if(c.Name== "java.lang.StringBuilder")
+            var c = method.DeclaringType.classfile.constantpool[src.arg1] as javaloader.ClassFile.ConstantPoolItemClass;
+            if (c.Name == "java.lang.StringBuilder")
             {
                 _ConvertPush(1, src, to);
                 _Insert1(VM.OpCode.NEWARRAY, "", to);
+            }
+            else if (c.Name == "java.math.BigInteger")
+            {
+                var next = method.GetNextCodeAddr(src.addr);
+                if (method.body_Codes[next].code == javaloader.NormalizedByteCode.__dup)
+                {
+                    return 1;
+                }
+                else
+                {
+                    return 0;
+                }
             }
             else
             {
@@ -454,9 +575,43 @@ namespace Neo.Compiler.JVM
             }
             return 0;
         }
-        private int _ConvertStringBuilder(string callname, OpCode src, AntsMethod to)
+        private int _ConvertIfNonNull(JavaMethod method, OpCode src, NeoMethod to)
         {
-            if(callname=="<init>")
+            int nm = method.GetLastCodeAddr(src.addr);//上一指令
+            int n = method.GetNextCodeAddr(src.addr);
+            int n2 = method.GetNextCodeAddr(n);
+            var codenext = method.body_Codes[n];
+
+            if (nm >= 0 && n >= 0 && n2 >= 0
+                && method.body_Codes[nm].code == javaloader.NormalizedByteCode.__dup //上一条是dup指令
+                && src.arg1 == n2 - src.addr //刚好跳过throw 指令
+                && codenext.code == javaloader.NormalizedByteCode.__invokestatic
+                )
+            {
+                var cc = method.DeclaringType.classfile.constantpool;
+                var c = cc[codenext.arg1] as javaloader.ClassFile.ConstantPoolItemMethodref;
+                var name = c.Class + "::" + c.Name;
+                if (name == "kotlin.jvm.internal.Intrinsics::throwNpe")
+                {//识别到套路
+                    var _code = to.body_Codes.Last().Value;
+                    //移除上一条指令
+                    to.body_Codes.Remove(_code.addr);
+                    this.addr = _code.addr;
+
+                    return 1;
+                }
+            }
+            var codenextnext = method.body_Codes[n2];
+            _ConvertPush(0, src, to);//和0比较
+            _Convert1by1(VM.OpCode.NUMNOTEQUAL, null, to);
+            var code = _Convert1by1(VM.OpCode.JMPIF, null, to, new byte[] { 0, 0 });
+            code.needfix = true;
+            code.srcaddr = src.addr + src.arg1;
+            return 0;
+        }
+        private int _ConvertStringBuilder(string callname, OpCode src, NeoMethod to)
+        {
+            if (callname == "<init>")
             {
                 _Convert1by1(VM.OpCode.SWAP, null, to);
                 _Convert1by1(VM.OpCode.DUP, null, to);
@@ -467,7 +622,7 @@ namespace Neo.Compiler.JVM
                 _Convert1by1(VM.OpCode.SETITEM, null, to);
                 return 0;
             }
-            if(callname=="append")
+            if (callname == "append")
             {
                 _Convert1by1(VM.OpCode.SWAP, null, to);//把对象数组换上来
                 _Convert1by1(VM.OpCode.DUP, null, to);
@@ -475,7 +630,7 @@ namespace Neo.Compiler.JVM
                 _Convert1by1(VM.OpCode.PICKITEM, null, to);
 
                 _ConvertPush(2, null, to);
-                _Convert1by1(VM.OpCode.ROLL,null,to);
+                _Convert1by1(VM.OpCode.ROLL, null, to);
                 _Convert1by1(VM.OpCode.SWAP, null, to);//把对象数组换上来
                 _Convert1by1(VM.OpCode.CAT, null, to);
 
@@ -484,7 +639,7 @@ namespace Neo.Compiler.JVM
                 _Convert1by1(VM.OpCode.SETITEM, null, to);
                 return 0;
             }
-            if(callname== "toString")
+            if (callname == "toString")
             {
                 _ConvertPush(0, null, to);
                 _Convert1by1(VM.OpCode.PICKITEM, null, to);

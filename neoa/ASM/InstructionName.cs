@@ -76,5 +76,7 @@
         SETITEM,
         NEWARRAY,
         NEWSTRUCT,
+        THROW,
+        THROWIFNOT,
     }
 }

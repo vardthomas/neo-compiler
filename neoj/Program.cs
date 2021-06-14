@@ -27,6 +27,7 @@ namespace Neo.Compiler
             }
             string filename = args[0];
             string onlyname = System.IO.Path.GetFileNameWithoutExtension(filename);
+            string extension = System.IO.Path.GetExtension(filename);
             //javaloader.ClassFile classFile = null;
             JavaModule module = new JavaModule();
 
@@ -38,11 +39,20 @@ namespace Neo.Compiler
             {
                 var path = System.Diagnostics.Process.GetCurrentProcess().MainModule.FileName;
                 path = System.IO.Path.GetDirectoryName(path);
-                module.LoadJar(System.IO.Path.Combine(path, "AntShares.SmartContract.Framework.jar"));
-                module.LoadClass(filename);
+                module.LoadJar(System.IO.Path.Combine(path, "org.neo.smartcontract.framework.jar"));
+
+		if (extension == ".jar")
+		{
+		    module.LoadJar(filename);
+		}
+		else
+		{
+		    module.LoadClass(filename);
+		}
+
                 var conv = new ModuleConverter(log);
 
-                AntsModule am = conv.Convert(module);
+                NeoModule am = conv.Convert(module);
                 bytes = am.Build();
                 log.Log("convert succ");
             }

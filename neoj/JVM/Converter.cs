@@ -5,22 +5,22 @@ using System.Text;
 
 namespace Neo.Compiler.JVM
 {
-    public class Converter
-    {
-        public static byte[] Convert(string classfilename, ILogger logger = null)
-        {
+    //public class Converter
+    //{
+    //    public static byte[] Convert(string classfilename, ILogger logger = null)
+    //    {
 
-            var moduleJVMPackage = new JavaModule();
-            moduleJVMPackage.LoadClass("go.class");
-            moduleJVMPackage.LoadJar("AntShares.SmartContract.Framework.jar");
+    //        var moduleJVMPackage = new JavaModule();
+    //        moduleJVMPackage.LoadClass("go.class");
+    //        moduleJVMPackage.LoadJar("org.neo.smartcontract.framework.jar");
 
-            var converter = new ModuleConverter(logger);
-            //有异常的话在 convert 函数中会直接throw 出来
-            var antmodule = converter.Convert(moduleJVMPackage);
-            return antmodule.Build();
-        }
+    //        var converter = new ModuleConverter(logger);
+    //        //有异常的话在 convert 函数中会直接throw 出来
+    //        var antmodule = converter.Convert(moduleJVMPackage);
+    //        return antmodule.Build();
+    //    }
 
-    }
+    //}
     class DefLogger : ILogger
     {
         public void Log(string log)
@@ -42,13 +42,15 @@ namespace Neo.Compiler.JVM
 
         ILogger logger;
         JavaModule srcModule;
-        public AntsModule outModule;
-        public Dictionary<JavaMethod, AntsMethod> methodLink = new Dictionary<JavaMethod, AntsMethod>();
-        public AntsModule Convert(JavaModule _in)
+        public NeoModule outModule;
+        public Dictionary<JavaMethod, NeoMethod> methodLink = new Dictionary<JavaMethod, NeoMethod>();
+        public NeoModule Convert(JavaModule _in, ConvOption option = null)
         {
             this.srcModule = _in;
             //logger.Log("beginConvert.");
-            this.outModule = new AntsModule(this.logger);
+            this.outModule = new NeoModule(this.logger);
+            this.outModule.option = option == null ? ConvOption.Default : option;
+
             foreach (var c in _in.classes.Values)
             {
                 if (c.skip) continue;
@@ -56,8 +58,10 @@ namespace Neo.Compiler.JVM
                 {
                     if (m.Value.skip) continue;
                     if (m.Key[0] == '<') continue;//系統函數不要
-                    AntsMethod nm = new AntsMethod();
+                    NeoMethod nm = new NeoMethod();
                     nm.name = c.classfile.Name + "::" + m.Key;
+                    nm.displayName = m.Key;
+                    nm.isPublic = m.Value.method.IsPublic;
                     this.methodLink[m.Value] = nm;
                     outModule.mapMethods[nm.name] = nm;
                 }
@@ -86,26 +90,10 @@ namespace Neo.Compiler.JVM
             string mainmethod = "";
             foreach (var key in outModule.mapMethods.Keys)
             {
-                if (key.Contains("Verify"))
-                {
-                    var m = outModule.mapMethods[key];
-                    foreach (var l in this.methodLink)
-                    {
-                        if (l.Value == m)
-                        {
-                            var srcm = l.Key;
-                            if (srcm.DeclaringType.superClass == "AntShares.SmartContract.Framework.VerificationCode" && srcm.returnType == "java.lang.Boolean")
-                            {
-                                logger.Log("找到函数入口点:" + key);
-                                if (mainmethod != "")
-                                    throw new Exception("拥有多个函数入口点，请检查");
-                                mainmethod = key;
-
-                            }
-                        }
-                    }
-                }
                 var name = key.Substring(key.IndexOf("::") + 2);
+                var i = name.IndexOf('(');
+                name = name.Substring(0, i);
+
                 if (name == ("Main"))
                 {
                     var m = outModule.mapMethods[key];
@@ -114,11 +102,11 @@ namespace Neo.Compiler.JVM
                         if (l.Value == m)
                         {
                             var srcm = l.Key;
-                            if (srcm.DeclaringType.superClass == "AntShares.SmartContract.Framework.FunctionCode")
+                            if (srcm.DeclaringType.superClass == "org.neo.smartcontract.framework.SmartContract")
                             {
-                                logger.Log("找到函数入口点:" + key);
+                                logger.Log("Find entrypoint:" + key);
                                 if (mainmethod != "")
-                                    throw new Exception("拥有多个函数入口点，请检查");
+                                    throw new Exception("Have too mush EntryPoint,Check it.");
                                 mainmethod = key;
 
                             }
@@ -128,7 +116,7 @@ namespace Neo.Compiler.JVM
             }
             if (mainmethod == "")
             {
-                throw new Exception("找不到入口函数，请检查");
+                throw new Exception("Can't find Main Method from SmartContract,Check it.");
 
             }
             outModule.mainMethod = mainmethod;
@@ -146,7 +134,7 @@ namespace Neo.Compiler.JVM
         {
             if (this.outModule.mapMethods.ContainsKey(main) == false)
             {
-                throw new Exception("找不到名为" + main + "的入口");
+                throw new Exception("can't find Entrypoint:" + main);
             }
             var first = this.outModule.mapMethods[main];
             first.funcaddr = 0;
@@ -184,21 +172,28 @@ namespace Neo.Compiler.JVM
 
             foreach (var c in this.outModule.total_Codes.Values)
             {
-                if (c.needfix)
+                if (c.needfixfunc)
                 {//需要地址转换
                     var addrfunc = this.outModule.mapMethods[c.srcfunc].funcaddr;
-                    Int16 addrconv = (Int16)(addrfunc - c.addr);
+                    int wantaddr = addrfunc - c.addr;
+
+                    if (wantaddr < Int16.MinValue || wantaddr > Int16.MaxValue)
+                    {
+                        throw new Exception("addr jump is too far.");
+                    }
+                    Int16 addrconv = (Int16)wantaddr;
                     c.bytes = BitConverter.GetBytes(addrconv);
+                    c.needfixfunc = false;
                 }
             }
         }
-        private void ConvertMethod(JavaMethod from, AntsMethod to)
+        private void ConvertMethod(JavaMethod from, NeoMethod to)
         {
             convertType.Clear();
             to.returntype = from.returnType;
             for (var i = 0; i < from.paramTypes.Count; i++)
             {
-                to.paramtypes.Add(new AntsParam("_" + i, from.paramTypes[i]));
+                to.paramtypes.Add(new NeoParam("_" + i, from.paramTypes[i]));
             }
 
 
@@ -219,7 +214,10 @@ namespace Neo.Compiler.JVM
                 else
                 {
                     //在return之前加入清理参数代码
-                    if (src.code == javaloader.NormalizedByteCode.__return || src.code == javaloader.NormalizedByteCode.__ireturn)//before return 
+                    if (src.code == javaloader.NormalizedByteCode.__return
+                        || src.code == javaloader.NormalizedByteCode.__ireturn
+                        || src.code == javaloader.NormalizedByteCode.__lreturn
+                        || src.code == javaloader.NormalizedByteCode.__areturn)//before return 
                     {
                         _insertEndCode(from, to, src);
                     }
@@ -235,7 +233,7 @@ namespace Neo.Compiler.JVM
         int addr = 0;
 
 
-        static int getNumber(AntsCode code)
+        static int getNumber(NeoCode code)
         {
             if (code.code <= VM.OpCode.PUSHBYTES75 && code.code >= VM.OpCode.PUSHBYTES1)
                 return (int)new BigInteger(code.bytes);
@@ -262,18 +260,17 @@ namespace Neo.Compiler.JVM
         }
         static int pushdata1bytes2int(byte[] data)
         {
-            var n = BitConverter.ToInt32(data, 1);
+            byte[] target = new byte[4];
+            for (var i = 1; i < data.Length; i++)
+                target[i - 1] = data[i];
+            var n = BitConverter.ToInt32(target, 0);
             return n;
         }
-        private void ConvertAddrInMethod(AntsMethod to)
+        private void ConvertAddrInMethod(NeoMethod to)
         {
             foreach (var c in to.body_Codes.Values)
             {
-                if (c.needfix &&
-
-                    c.code != VM.OpCode.CALL //call 要做函数间的转换
-
-                    )
+                if (c.needfix)
                 {
 
                     var addr = addrconv[c.srcaddr];
@@ -285,7 +282,7 @@ namespace Neo.Compiler.JVM
             }
         }
 
-        private int ConvertCode(JavaMethod method, OpCode src, AntsMethod to)
+        private int ConvertCode(JavaMethod method, OpCode src, NeoMethod to)
         {
             int skipcount = 0;
             switch (src.code)
@@ -300,12 +297,16 @@ namespace Neo.Compiler.JVM
                 case javaloader.NormalizedByteCode.__dreturn:
                 case javaloader.NormalizedByteCode.__areturn:
                     //        //return 在外面特殊处理了
-                    _Insert1(VM.OpCode.RET, null, to);
+                    _Convert1by1(VM.OpCode.RET, src, to);
                     break;
 
                 case javaloader.NormalizedByteCode.__pop:
                     _Convert1by1(VM.OpCode.DROP, src, to);
                     break;
+                case javaloader.NormalizedByteCode.__pop2://pop2 这个指令有些鬼
+                    _Convert1by1(VM.OpCode.DROP, src, to);
+                    break;
+
                 case javaloader.NormalizedByteCode.__getstatic:
                     {
                         _Convert1by1(VM.OpCode.NOP, src, to);
@@ -324,11 +325,24 @@ namespace Neo.Compiler.JVM
                             }
 
                         }
-                        if (c.Class == "java.lang.System")
+                        else if (c.Class == "java.lang.System")
                         {
                             if (c.Name == "out")
                             {
                                 //donothing
+                            }
+                        }
+                        else
+                        {
+                            var m = method.DeclaringType.module;
+                            if (m.classes.ContainsKey(c.Class))
+                            {
+                                var _tclass = m.classes[c.Class];
+                                if (_tclass.IsEnum)
+                                {
+                                    var v = _tclass.ConstValues[c.Name];
+                                    _ConvertPush(v, src, to);
+                                }
                             }
                         }
                         //this.convertType.Push(c.Signature);
@@ -369,6 +383,11 @@ namespace Neo.Compiler.JVM
                 case javaloader.NormalizedByteCode.__lconst_0:
                     _ConvertPush(0, src, to);
                     break;
+
+                case javaloader.NormalizedByteCode.__aconst_null:
+                    _ConvertPush(0, src, to);
+                    break;
+
                 case javaloader.NormalizedByteCode.__newarray:
                 case javaloader.NormalizedByteCode.__anewarray:
                     skipcount = _ConvertNewArray(method, src, to);
@@ -376,18 +395,26 @@ namespace Neo.Compiler.JVM
 
                 case javaloader.NormalizedByteCode.__astore:
                 case javaloader.NormalizedByteCode.__istore:
-                    _ConvertStLoc(src, to, src.arg1);
+                case javaloader.NormalizedByteCode.__lstore:
+                    _ConvertStLoc(method, src, to, src.arg1);
                     break;
                 case javaloader.NormalizedByteCode.__aload:
                 case javaloader.NormalizedByteCode.__iload:
-                    _ConvertLdLoc(src, to, src.arg1);
+                case javaloader.NormalizedByteCode.__lload:
+                    _ConvertLdLoc(method, src, to, src.arg1);
+                    break;
+                case javaloader.NormalizedByteCode.__baload:
+                    _ConvertPush(1, src, to);
+                    _Convert1by1(VM.OpCode.SUBSTR, null, to);
                     break;
                 case javaloader.NormalizedByteCode.__aaload:
                 case javaloader.NormalizedByteCode.__iaload:
+                case javaloader.NormalizedByteCode.__laload:
                     _Convert1by1(VM.OpCode.PICKITEM, src, to);
                     break;
                 case javaloader.NormalizedByteCode.__iastore:
                 case javaloader.NormalizedByteCode.__aastore:
+                case javaloader.NormalizedByteCode.__lastore:
                     _Convert1by1(VM.OpCode.SETITEM, src, to);
                     break;
                 case javaloader.NormalizedByteCode.__arraylength:
@@ -421,7 +448,10 @@ namespace Neo.Compiler.JVM
                     //_Convert1by1(VM.OpCode.INC, src, to);
 
                     break;
-
+                case javaloader.NormalizedByteCode.__lcmp:
+                    _Convert1by1(VM.OpCode.SUB, src, to);
+                    _Convert1by1(VM.OpCode.SIGN, null, to);
+                    break;
 
                 //    case CodeEx.Ldloc_0:
                 //        _ConvertLdLoc(src, to, 0);
@@ -526,7 +556,7 @@ namespace Neo.Compiler.JVM
                 case javaloader.NormalizedByteCode.__iflt:
                     {
                         _ConvertPush(0, src, to);//和0比较
-                        _Convert1by1(VM.OpCode.GT, null, to);
+                        _Convert1by1(VM.OpCode.LT, null, to);
                         var code = _Convert1by1(VM.OpCode.JMPIF, null, to, new byte[] { 0, 0 });
                         code.needfix = true;
                         code.srcaddr = src.arg1 + src.addr;
@@ -543,7 +573,7 @@ namespace Neo.Compiler.JVM
                 case javaloader.NormalizedByteCode.__ifle:
                     {
                         _ConvertPush(0, src, to);//和0比较
-                        _Convert1by1(VM.OpCode.GT, null, to);
+                        _Convert1by1(VM.OpCode.LTE, null, to);
                         var code = _Convert1by1(VM.OpCode.JMPIF, null, to, new byte[] { 0, 0 });
                         code.needfix = true;
                         code.srcaddr = src.addr + src.arg1;
@@ -560,7 +590,7 @@ namespace Neo.Compiler.JVM
                 case javaloader.NormalizedByteCode.__ifgt:
                     {
                         _ConvertPush(0, src, to);//和0比较
-                        _Convert1by1(VM.OpCode.LT, null, to);
+                        _Convert1by1(VM.OpCode.GT, null, to);
                         var code = _Convert1by1(VM.OpCode.JMPIF, null, to, new byte[] { 0, 0 });
                         code.needfix = true;
                         code.srcaddr = src.addr + src.arg1;
@@ -577,7 +607,7 @@ namespace Neo.Compiler.JVM
                 case javaloader.NormalizedByteCode.__ifge:
                     {
                         _ConvertPush(0, src, to);//和0比较
-                        _Convert1by1(VM.OpCode.LTE, null, to);
+                        _Convert1by1(VM.OpCode.GTE, null, to);
                         var code = _Convert1by1(VM.OpCode.JMPIF, null, to, new byte[] { 0, 0 });
                         code.needfix = true;
                         code.srcaddr = src.addr + src.arg1;
@@ -602,11 +632,11 @@ namespace Neo.Compiler.JVM
                     break;
                 case javaloader.NormalizedByteCode.__ifnonnull:
                     {
-                        _ConvertPush(0, src, to);//和0比较
-                        _Convert1by1(VM.OpCode.NUMNOTEQUAL, null, to);
-                        var code = _Convert1by1(VM.OpCode.JMPIF, null, to, new byte[] { 0, 0 });
-                        code.needfix = true;
-                        code.srcaddr = src.addr + src.arg1;
+                        //实际上ifnonnull 有可能是kotlin自动插入的代码，他有个套路
+                        //ifnonnull 跳过 一个throw，isnon 就 throw
+                        //Neo.VM实际上没有null这个类型，要识别出这个套路，编译出更合理的代码
+                        skipcount = _ConvertIfNonNull(method, src, to);
+
                     }
                     break;
                 //    //Stack
@@ -618,7 +648,7 @@ namespace Neo.Compiler.JVM
                 case javaloader.NormalizedByteCode.__iand:
                 case javaloader.NormalizedByteCode.__land:
                     _Convert1by1(VM.OpCode.AND, src, to);
-                        break;
+                    break;
                 case javaloader.NormalizedByteCode.__ior:
                 case javaloader.NormalizedByteCode.__lor:
                     _Convert1by1(VM.OpCode.OR, src, to);
@@ -654,7 +684,7 @@ namespace Neo.Compiler.JVM
                     break;
 
                 case javaloader.NormalizedByteCode.__new:
-                    _ConvertNew(method, src, to);
+                    skipcount = _ConvertNew(method, src, to);
 
                     break;
                 //    case CodeEx.Neg:

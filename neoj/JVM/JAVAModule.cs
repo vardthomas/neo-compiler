@@ -16,18 +16,18 @@ namespace Neo.Compiler.JVM
         public JavaClass LoadClassByBytes(byte[] data, string srccode = null)
         {
             var js = new javaloader.ClassFile(data, 0, data.Length);
-            var _class = new JavaClass(js, null);
+            var _class = new JavaClass(this, js, null);
             this.classes[_class.classfile.Name] = _class;
             return _class;
         }
         public void LoadJar(string filename, string codepath = null)
         {
             string f = System.IO.Path.GetFileName(filename);
-            bool bskip = false;
-            if (f == "AntShares.SmartContract.Framework.jar")
-            {
-                bskip = true;
-            }
+            //不该基于文件名，而是类的名字
+            //if (f == "org.neo.smartcontract.framework.jar")
+            //{
+            //    bskip = true;
+            //}
             using (var zipStream = new ZipInputStream(File.OpenRead(filename)))
             {
                 ZipEntry ent = null;
@@ -51,7 +51,8 @@ namespace Neo.Compiler.JVM
                             }
                             data = ms.ToArray();
                         }
-                       var cc= LoadClassByBytes(data, codepath);
+                        var cc = LoadClassByBytes(data, codepath);
+                        var bskip = cc.classfile.Name.IndexOf("org.neo.") == 0 || cc.classfile.Name.IndexOf("src.org.neo.") == 0;
                         cc.skip = bskip;
                     }
 
@@ -67,9 +68,53 @@ namespace Neo.Compiler.JVM
     }
     public class JavaClass
     {
-        public JavaClass(javaloader.ClassFile classfile, string[] srcfile = null)
+        public Dictionary<string, byte[]> ConstValues = new Dictionary<string, byte[]>();
+        public bool IsEnum = false;
+        void _InitConsts(Instruction[] Instructions)
         {
+            int lastv = -1;
+            foreach (var c in Instructions)
+            {
+                if (c.NormalizedOpCode == javaloader.NormalizedByteCode.__iconst)
+                {
+                    lastv = c.Arg1;
+                }
+                else if (c.NormalizedOpCode == javaloader.NormalizedByteCode.__invokespecial)
+                {
+                    continue;
+                }
+                else if (c.NormalizedOpCode == javaloader.NormalizedByteCode.__putstatic)
+                {
+                    var p1 = c.Arg1;
+                    if (this.classfile.constantpool[p1] is javaloader.ClassFile.ConstantPoolItemFieldref &&
+                       lastv >= 0)
+                    {
+                        var fref = (javaloader.ClassFile.ConstantPoolItemFieldref)this.classfile.constantpool[p1];
+                        this.ConstValues[fref.Name] = new System.Numerics.BigInteger(lastv).ToByteArray();
+                    }
+                }
+                else
+                {
+                    lastv = -1;
+                }
+            }
+        }
+        public JavaModule module;
+        public JavaClass(JavaModule module, javaloader.ClassFile classfile, string[] srcfile = null)
+        {
+            this.module = module;
             this.classfile = classfile;
+            if (this.classfile.IsEnum)
+            {
+                this.IsEnum = true;
+                foreach (var m in this.classfile.Methods)
+                {
+                    if (m.Name == javaloader.StringConstants.CLINIT)
+                    {
+                        _InitConsts(m.Instructions);
+                    }
+                }
+            }
             this.srcfile = srcfile;
             if (this.srcfile == null)
                 this.srcfile = new string[0];
@@ -77,24 +122,52 @@ namespace Neo.Compiler.JVM
             {
                 this.fields.Add(f.Name, f.Signature);
             }
+            bool isKtObj = false;
+            if (this.classfile.SourceFileAttribute.Contains(".kt"))
+            {
+                var sign = "L" + this.classfile.Name + ";";
+                foreach (var f in this.classfile.Fields)
+                {
+                    if (f.Name == "INSTANCE" && f.IsStatic && f.Signature == sign)
+                    {
+                        isKtObj = true;
+                        break;
+                    }
+                }
+            }
             foreach (var m in this.classfile.Methods)
             {
+
                 bool bskip = false;
+                if (m.IsStatic == false && isKtObj == false)
+                {
+                    bskip = true;
+                    //静态成员不要，除非是kotlin 的 object 对象，相当于静态
+
+                }
+
                 if (m.Annotations != null)
                 {
                     object[] info = m.Annotations[0] as object[];
-                    if (info[1] as string == "LAntShares/SmartContract/Framework/Appcall;" ||
-                        info[1] as string == "LAntShares/SmartContract/Framework/Syscall;" |
-                        info[1] as string == "LAntShares/SmartContract/Framework/Opcall;")
+                    if (info[1] as string == "Lorg/neo/smartcontract/framework/Appcall;" ||
+                        info[1] as string == "Lorg/neo/smartcontract/framework/Syscall;" ||
+                        info[1] as string == "Lorg/neo/smartcontract/framework/OpCode;" ||
+                        info[1] as string == "Lorg/neo/smartcontract/framework/Nonemit;")
                     {
                         //continue;
                         bskip = true;
                     }
                     //if(m.Annotations[0])
                 }
+                if (m.Name == "<init>")
+                    bskip = true;
                 var nm = new JavaMethod(this, m);
                 nm.skip = bskip;
-                this.methods[m.Name] = nm;
+                //if (bskip == false && methods.ContainsKey(m.Name))
+                //{
+                //    throw new Exception("already have a func named:" + classfile.Name + "." + m.Name);
+                //}
+                this.methods[m.Name + m.Signature] = nm;
             }
             this.superClass = this.classfile.SuperClass;
         }
@@ -114,7 +187,7 @@ namespace Neo.Compiler.JVM
         public string returnType;
         public List<string> paramTypes = new List<string>();
         public Dictionary<int, OpCode> body_Codes = new Dictionary<int, OpCode>();
-        public List<AntsParam> body_Variables = new List<AntsParam>();
+        public List<NeoParam> body_Variables = new List<NeoParam>();
 
         public int MaxVariableIndex = 0;
         //public int addLocal_VariablesCount = 0;
@@ -136,7 +209,7 @@ namespace Neo.Compiler.JVM
                     if (ind >= 0)
                         this.argTable[ind] = i;
                 }
-            scanTypes(method.Signature,out this.returnType,this.paramTypes);
+            scanTypes(method.Signature, out this.returnType, this.paramTypes);
             Dictionary<int, string> local = new Dictionary<int, string>();
 
             if (this.method.LocalVariableTableAttribute != null)
@@ -164,7 +237,7 @@ namespace Neo.Compiler.JVM
             //}
 
             {
-                this.body_Variables = new List<AntsParam>();
+                this.body_Variables = new List<NeoParam>();
 
                 //var addLocal_VariablesCount = this.method.MaxLocals - this.paramTypes.Count;
                 //if (addLocal_VariablesCount < local.Count)
@@ -176,13 +249,13 @@ namespace Neo.Compiler.JVM
                 //    this.body_Variables.Add(new Param("_noname", ""));
                 //}
 
-                for (var i = 0; i < local.Count; i++)
+                for (var i = 0; i < MaxVariableIndex; i++)
                 {
-                    this.body_Variables.Add(new AntsParam("_noname", ""));
+                    this.body_Variables.Add(new NeoParam("_noname", ""));
                 }
                 foreach (var lv in local)
                 {
-                    this.body_Variables[lv.Key - this.paramTypes.Count] = new AntsParam("local", lv.Value);
+                    this.body_Variables[lv.Key - this.paramTypes.Count] = new NeoParam("local", lv.Value);
                 }
             }
             if (this.method.Instructions != null)
@@ -236,7 +309,7 @@ namespace Neo.Compiler.JVM
             {
                 return "double";
             }
-            else if(sign[i]=='C')
+            else if (sign[i] == 'C')
             {
                 return "char";
             }
@@ -254,7 +327,7 @@ namespace Neo.Compiler.JVM
                 throw new Exception("not parsed sign.");
             }
         }
-        public static void scanTypes(string sign,out string returnType,List<string> paramTypes)
+        public static void scanTypes(string sign, out string returnType, List<string> paramTypes)
         {
             returnType = "";
             bool forreturn = false;
@@ -319,7 +392,20 @@ namespace Neo.Compiler.JVM
         //        }
         //    }
         //}
+        public int GetLastCodeAddr(int srcaddr)
+        {
+            int last = -1;
+            foreach (var key in this.body_Codes.Keys)
+            {
+                if (key == srcaddr)
+                {
 
+                    return last;
+                }
+                last = key;
+            }
+            return last;
+        }
         public int GetNextCodeAddr(int srcaddr)
         {
             bool bskip = false;
@@ -395,7 +481,7 @@ namespace Neo.Compiler.JVM
             this.arg1 = ins.Arg1;
             this.arg2 = ins.Arg2;
             this.addr = ins.PC;
-            if (method.method.LineNumberTableAttribute.TryGetValue(this.addr, out this.debugline) == false)
+            if (method.method.LineNumberTableAttribute == null || method.method.LineNumberTableAttribute.TryGetValue(this.addr, out this.debugline) == false)
             {
                 this.debugline = -1;
             }

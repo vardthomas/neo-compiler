@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 
 /// <summary>
@@ -12,21 +12,22 @@ namespace Neo.Compiler.MSIL
         public Mono.Cecil.ModuleDefinition module = null;
         public List<string> moduleref = new List<string>();
         public Dictionary<string, ILType> mapType = new Dictionary<string, ILType>();
-        public ILModule()
+        public ILogger logger;
+        public ILModule(ILogger _logger = null)
         {
-
+            this.logger = _logger;
         }
         public void LoadModule(System.IO.Stream dllStream, System.IO.Stream pdbStream)
         {
             this.module = Mono.Cecil.ModuleDefinition.ReadModule(dllStream);
-#if WITHPDB
+//#if WITHPDB
             if (pdbStream != null)
             {
                 var debugInfoLoader = new Mono.Cecil.Pdb.PdbReaderProvider();
 
                 module.ReadSymbols(debugInfoLoader.GetSymbolReader(module, pdbStream));
             }
-#endif
+//#endif
             if (module.HasAssemblyReferences)
             {
                 foreach (var ar in module.AssemblyReferences)
@@ -45,16 +46,16 @@ namespace Neo.Compiler.MSIL
                     if (t.FullName.Contains(".My."))//vb 系统类不要
                         continue;
 
-                    mapType[t.FullName] = new ILType(this, t);
-                    if(t.HasNestedTypes)
+                    mapType[t.FullName] = new ILType(this, t, logger);
+                    if (t.HasNestedTypes)
                     {
-                        foreach(var nt in t.NestedTypes)
+                        foreach (var nt in t.NestedTypes)
                         {
-                            mapType[nt.FullName] = new ILType(this, nt);
+                            mapType[nt.FullName] = new ILType(this, nt, logger);
 
                         }
                     }
-                   
+
                 }
             }
         }
@@ -63,35 +64,144 @@ namespace Neo.Compiler.MSIL
     public class ILType
     {
         Mono.Cecil.TypeDefinition type;
-        public Dictionary<string, string> fields = new Dictionary<string, string>();
+        public Dictionary<string, ILField> fields = new Dictionary<string, ILField>();
         public Dictionary<string, ILMethod> methods = new Dictionary<string, ILMethod>();
-        public ILType(ILModule module, Mono.Cecil.TypeDefinition type)
+        public ILType(ILModule module, Mono.Cecil.TypeDefinition type, ILogger logger)
         {
             this.type = type;
             foreach (Mono.Cecil.FieldDefinition f in type.Fields)
             {
-                this.fields.Add(f.Name, f.FieldType.FullName);
+                this.fields.Add(f.Name, new ILField(this, f));
             }
             foreach (Mono.Cecil.MethodDefinition m in type.Methods)
             {
                 if (m.IsStatic == false)
                 {
-                    var method = new ILMethod(this, null);
+                    var method = new ILMethod(this, null, logger);
                     method.fail = "只能导出static 函数";
-                    methods[m.Name] = method;
+                    methods[m.FullName] = method;
                 }
                 else
                 {
-                    var method = new ILMethod(this, m);
-                    methods[m.Name] = method;
+                    var method = new ILMethod(this, m, logger);
+                    if (methods.ContainsKey(m.FullName))
+                    {
+                        throw new Exception("already have a func named:" + type.FullName + "::" + m.Name);
+                    }
+                    methods[m.FullName] = method;
                 }
             }
         }
 
     }
+
+    public class ILField
+    {
+        public ILField(ILType type, Mono.Cecil.FieldDefinition field)
+        {
+            this.type = field.FieldType.FullName;
+            this.name = field.Name;
+            this.displayName = this.name;
+            this.field = field;
+            foreach (var ev in field.DeclaringType.Events)
+            {
+                if (ev.Name == field.Name && ev.EventType.FullName == field.FieldType.FullName)
+                {
+                    this.isEvent = true;
+                    Mono.Collections.Generic.Collection<Mono.Cecil.CustomAttribute> ca = ev.CustomAttributes;
+                    foreach (var attr in ca)
+                    {
+                        if (attr.AttributeType.Name == "DisplayNameAttribute")
+                        {
+                            this.displayName = (string)attr.ConstructorArguments[0].Value;
+                        }
+                    }
+                    var eventtype = field.FieldType as Mono.Cecil.TypeDefinition;
+                    if (eventtype == null)
+                    {
+                        try
+                        {
+                            eventtype = field.FieldType.Resolve();
+                        }
+                        catch
+                        {
+                            throw new Exception("can't parese event type from:" + field.FieldType.FullName + ".maybe it is System.Action<xxx> which is defined in mscorlib.dll，copy this dll in.");
+                        }
+                    }
+                    if (eventtype != null)
+                    {
+                        foreach (var m in eventtype.Methods)
+                        {
+                            if (m.Name == "Invoke")
+                            {
+                                this.returntype = m.ReturnType.FullName;
+                                try
+                                {
+                                    var _type = m.ReturnType.Resolve();
+                                    foreach (var i in _type.Interfaces)
+                                    {
+                                        if (i.InterfaceType.Name == "IApiInterface")
+                                        {
+                                            this.returntype = "IInteropInterface";
+                                        }
+                                    }
+                                }
+                                catch (Exception err)
+                                {
+
+                                }
+                                foreach (var src in m.Parameters)
+                                {
+                                    string paramtype = src.ParameterType.FullName;
+                                    if (src.ParameterType.IsGenericParameter)
+                                    {
+                                        var gtype = src.ParameterType as Mono.Cecil.GenericParameter;
+
+                                        var srcgtype = field.FieldType as Mono.Cecil.GenericInstanceType;
+                                        var rtype = srcgtype.GenericArguments[gtype.Position];
+                                        paramtype = rtype.FullName;
+                                        try
+                                        {
+                                            var _type = rtype.Resolve();
+                                            foreach (var i in _type.Interfaces)
+                                            {
+                                                if (i.InterfaceType.Name == "IApiInterface")
+                                                {
+                                                    paramtype = "IInteropInterface";
+                                                }
+                                            }
+                                        }
+                                        catch (Exception err)
+                                        {
+
+                                        }
+                                    }
+                                    this.paramtypes.Add(new NeoParam(src.Name, paramtype));
+
+                                }
+                            }
+                        }
+                    }
+                    break;
+                }
+            }
+        }
+        public bool isEvent = false;
+        public string type;
+        public string name;
+        public string displayName;
+        public string returntype;
+        public List<NeoParam> paramtypes = new List<NeoParam>();
+        public override string ToString()
+        {
+            return type;
+        }
+        public Mono.Cecil.FieldDefinition field;
+    }
+
     public class ILMethod
     {
-        public ILMethod(ILType type, Mono.Cecil.MethodDefinition method)
+        public ILMethod(ILType type, Mono.Cecil.MethodDefinition method, ILogger logger = null)
         {
             this.method = method;
             if (method != null)
@@ -102,7 +212,23 @@ namespace Neo.Compiler.MSIL
                     hasParam = true;
                     foreach (var p in method.Parameters)
                     {
-                        this.paramtypes.Add(new AntsParam(p.Name, p.ParameterType.FullName));
+                        string paramtype = p.ParameterType.FullName;
+                        try
+                        {
+                            var _type = p.ParameterType.Resolve();
+                            foreach (var i in _type.Interfaces)
+                            {
+                                if (i.InterfaceType.Name == "IApiInterface")
+                                {
+                                    paramtype = "IInteropInterface";
+                                }
+                            }
+                        }
+                        catch (Exception err)
+                        {
+
+                        }
+                        this.paramtypes.Add(new NeoParam(p.Name, paramtype));
                     }
                 }
                 if (method.HasBody)
@@ -112,7 +238,8 @@ namespace Neo.Compiler.MSIL
                     {
                         foreach (var v in bodyNative.Variables)
                         {
-                            this.body_Variables.Add(new AntsParam(v.Name, v.VariableType.FullName));
+                            var indexname = v.VariableType.Name + ":" + v.Index;
+                            this.body_Variables.Add(new NeoParam(indexname, v.VariableType.FullName));
                         }
                     }
                     for (int i = 0; i < bodyNative.Instructions.Count; i++)
@@ -121,10 +248,12 @@ namespace Neo.Compiler.MSIL
                         OpCode c = new OpCode();
                         c.code = (CodeEx)(int)code.OpCode.Code;
                         c.addr = code.Offset;
-                        if (code.SequencePoint != null)
+
+                        var sp = method.DebugInformation.GetSequencePoint(code);
+                        if (sp != null)
                         {
-                            c.debugcode = code.SequencePoint.Document.Url;
-                            c.debugline = code.SequencePoint.StartLine;
+                            c.debugcode = sp.Document.Url;
+                            c.debugline = sp.StartLine;
                         }
                         c.InitToken(code.Operand);
                         this.body_Codes.Add(c.addr, c);
@@ -134,10 +263,10 @@ namespace Neo.Compiler.MSIL
         }
 
         public string returntype;
-        public List<AntsParam> paramtypes = new List<AntsParam>();
+        public List<NeoParam> paramtypes = new List<NeoParam>();
         public bool hasParam = false;
         public Mono.Cecil.MethodDefinition method;
-        public List<AntsParam> body_Variables = new List<AntsParam>();
+        public List<NeoParam> body_Variables = new List<NeoParam>();
         public SortedDictionary<int, OpCode> body_Codes = new SortedDictionary<int, OpCode>();
         public string fail = null;
         public int GetNextCodeAddr(int srcaddr)

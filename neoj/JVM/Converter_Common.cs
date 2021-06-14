@@ -5,9 +5,9 @@ namespace Neo.Compiler.JVM
 {
     public partial class ModuleConverter
     {
-        private AntsCode _Insert1(VM.OpCode code, string comment, AntsMethod to, byte[] data = null)
+        private NeoCode _Insert1(VM.OpCode code, string comment, NeoMethod to, byte[] data = null)
         {
-            AntsCode _code = new AntsCode();
+            NeoCode _code = new NeoCode();
             int startaddr = addr;
             _code.addr = addr;
             {
@@ -28,7 +28,7 @@ namespace Neo.Compiler.JVM
             return _code;
         }
 
-        private AntsCode _InsertPush(byte[] data, string comment, AntsMethod to)
+        private NeoCode _InsertPush(byte[] data, string comment, NeoMethod to)
         {
             if (data.Length == 0) return _Insert1(VM.OpCode.PUSH0, comment, to);
             if (data.Length <= 75) return _Insert1((VM.OpCode)data.Length, comment, to, data);
@@ -55,7 +55,7 @@ namespace Neo.Compiler.JVM
             return _Insert1(code, comment, to, bytes);
         }
 
-        private AntsCode _InsertPush(int i, string comment, AntsMethod to)
+        private NeoCode _InsertPush(int i, string comment, NeoMethod to)
         {
             if (i == 0) return _Insert1(VM.OpCode.PUSH0, comment, to);
             if (i == -1) return _Insert1(VM.OpCode.PUSHM1, comment, to);
@@ -63,9 +63,9 @@ namespace Neo.Compiler.JVM
             return _InsertPush(((BigInteger)i).ToByteArray(), comment, to);
         }
 
-        private AntsCode _Convert1by1(VM.OpCode code, OpCode src, AntsMethod to, byte[] data = null)
+        private NeoCode _Convert1by1(VM.OpCode code, OpCode src, NeoMethod to, byte[] data = null)
         {
-            AntsCode _code = new AntsCode();
+            NeoCode _code = new NeoCode();
             int startaddr = addr;
             _code.addr = addr;
             if (src != null)
@@ -91,7 +91,7 @@ namespace Neo.Compiler.JVM
             return _code;
         }
 
-        private AntsCode _ConvertPush(byte[] data, OpCode src, AntsMethod to)
+        private NeoCode _ConvertPush(byte[] data, OpCode src, NeoMethod to)
         {
             if (data.Length == 0) return _Convert1by1(VM.OpCode.PUSH0, src, to);
             //if (data.Length <= 75) return _Convert1by1((VM.OpCode)data.Length, src, to, data);
@@ -118,7 +118,7 @@ namespace Neo.Compiler.JVM
             return _Convert1by1(code, src, to, bytes);
         }
 
-        private AntsCode _ConvertPush(long i, OpCode src, AntsMethod to)
+        private NeoCode _ConvertPush(long i, OpCode src, NeoMethod to)
         {
             if (i == 0) return _Convert1by1(VM.OpCode.PUSH0, src, to);
             if (i == -1) return _Convert1by1(VM.OpCode.PUSHM1, src, to);
@@ -126,17 +126,26 @@ namespace Neo.Compiler.JVM
             return _ConvertPush(((BigInteger)i).ToByteArray(), src, to);
         }
 
-        private void _insertBeginCode(JavaMethod from, AntsMethod to)
+        private void _insertBeginCode(JavaMethod from, NeoMethod to)
         {
             //压入槽位栈
-            _InsertPush(from.MaxVariableIndex, "begincode", to);
+            _InsertPush(from.MaxVariableIndex + 1, "begincode", to);
             _Insert1(VM.OpCode.NEWARRAY, "", to);
             _Insert1(VM.OpCode.TOALTSTACK, "", to);
 
-            for(var i=0;i<from.paramTypes.Count;i++)
+            for (var i = 0; i < from.paramTypes.Count; i++)
             {
+                int pos = 0;
+                if (from.method.IsStatic)
+                {
+                    pos = from.argTable[i];
+                }
+                else
+                {//非静态0号是this
+                    pos = from.argTable[i + 1];
+                }
                 _Insert1(VM.OpCode.DUPFROMALTSTACK, "init param:" + i, to);
-                _InsertPush(from.argTable[i], "", to);
+                _InsertPush(pos, "", to);
                 _InsertPush(2, "", to);
                 _Insert1(VM.OpCode.ROLL, "", to);
                 _Insert1(VM.OpCode.SETITEM, "", to);
@@ -150,7 +159,7 @@ namespace Neo.Compiler.JVM
             //}
         }
 
-        private void _insertEndCode(JavaMethod from, AntsMethod to, OpCode src)
+        private void _insertEndCode(JavaMethod from, NeoMethod to, OpCode src)
         {
             //占位不谢
             //_Convert1by1(VM.OpCode.NOP, src, to);

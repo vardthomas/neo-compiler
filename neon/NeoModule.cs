@@ -4,15 +4,15 @@ using System.Text;
 
 namespace Neo.Compiler
 {
-    public class AntsModule
+    public class NeoModule
     {
-        public AntsModule(ILogger logger)
+        public NeoModule(ILogger logger)
         {
             this.logger = logger;
         }
         ILogger logger;
         //小蚁没类型，只有方法
-        public SortedDictionary<int, AntsCode> total_Codes = new SortedDictionary<int, AntsCode>();
+        public SortedDictionary<int, NeoCode> total_Codes = new SortedDictionary<int, NeoCode>();
         public byte[] Build()
         {
             List<byte> bytes = new List<byte>();
@@ -30,7 +30,9 @@ namespace Neo.Compiler
             //并计算 this.codehash            byte[]
         }
         public string mainMethod;
-        public Dictionary<string, AntsMethod> mapMethods = new Dictionary<string, AntsMethod>();
+        public ConvOption option;
+        public Dictionary<string, NeoMethod> mapMethods = new Dictionary<string, NeoMethod>();
+        public Dictionary<string, NeoEvent> mapEvents = new Dictionary<string, NeoEvent>();
         //public Dictionary<string, byte[]> codes = new Dictionary<string, byte[]>();
         //public byte[] GetScript(byte[] script_hash)
         //{
@@ -44,7 +46,7 @@ namespace Neo.Compiler
         public string GenJson()
         {
             MyJson.JsonNode_Object json = new MyJson.JsonNode_Object();
-            json["__name__"] = new MyJson.JsonNode_ValueString("antmodule.");
+            json["__name__"] = new MyJson.JsonNode_ValueString("neomodule.");
 
             //code
             var jsoncode = new MyJson.JsonNode_Array();
@@ -80,18 +82,23 @@ namespace Neo.Compiler
 
         }
         SHA1 sha1 = SHA1.Create();
-
+        public Dictionary<string, object> staticfields = new Dictionary<string, object>();
+       
     }
-    public class AntsMethod
+    public class NeoMethod
     {
+        public string _namespace;
         public string name;
-        public List<AntsParam> paramtypes = new List<AntsParam>();
+        public string displayName;
+        public List<NeoParam> paramtypes = new List<NeoParam>();
         public string returntype;
+        public bool isPublic = true;
+        public bool inSmartContract;
         //临时变量
-        public List<AntsParam> body_Variables = new List<AntsParam>();
+        public List<NeoParam> body_Variables = new List<NeoParam>();
 
         //临时记录在此，会合并到一起
-        public SortedDictionary<int, AntsCode> body_Codes = new SortedDictionary<int, AntsCode>();
+        public SortedDictionary<int, NeoCode> body_Codes = new SortedDictionary<int, NeoCode>();
         public int funcaddr;
         public MyJson.JsonNode_Object GenJson()
         {
@@ -133,9 +140,21 @@ namespace Neo.Compiler
         //    //将body链接，生成this.code       byte[]
         //    //并计算 this.codehash            byte[]
         //}
+        public string lastsfieldname =null;//最后一个加载的静态成员的名字，仅event使用
 
+        public int lastparam = -1;//最后一个加载的参数对应
+        public int lastCast = -1;
     }
-    public class AntsCode
+    public class NeoEvent
+    {
+        public string _namespace;
+        public string name;
+        public string displayName;
+        public List<NeoParam> paramtypes = new List<NeoParam>();
+        public string returntype;
+    }
+
+    public class NeoCode
     {
         public VM.OpCode code = VM.OpCode.NOP;
         public int addr;
@@ -145,7 +164,9 @@ namespace Neo.Compiler
         public int debugILAddr = -1;
         public string debugILCode;
         public bool needfix = false;//lateparse tag
+        public bool needfixfunc = false;
         public int srcaddr;
+        public int[] srcaddrswitch;
         public string srcfunc;
         public override string ToString()
         {
@@ -211,9 +232,9 @@ namespace Neo.Compiler
 
         }
     }
-    public class AntsParam
+    public class NeoParam
     {
-        public AntsParam(string name, string type)
+        public NeoParam(string name, string type)
         {
             this.name = name;
             this.type = type;

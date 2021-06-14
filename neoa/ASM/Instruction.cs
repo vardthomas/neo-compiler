@@ -107,6 +107,8 @@ namespace Neo.Compiler.ASM
                 case InstructionName.SETITEM:
                 case InstructionName.NEWARRAY:
                 case InstructionName.NEWSTRUCT:
+                case InstructionName.THROW:
+                case InstructionName.THROWIFNOT:
                     Code = ProcessOthers();
                     break;
                 case InstructionName.JMP:
