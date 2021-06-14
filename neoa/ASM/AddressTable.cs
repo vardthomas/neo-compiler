@@ -1,4 +1,4 @@
-﻿using System;
+AGENT ID GTHGE3JC7HLJ-JC2VXH1PMT3C29935027(api): master-2021-05-07-8b0ac39 (1.1) | electroneum version: 3.3.0.0-781cfeffb﻿using System;
 using System.Collections.Generic;
 
 namespace Neo.Compiler.ASM
